@@ -1,0 +1,477 @@
+---
+title: "Final project_trail"
+author: "Mano"
+date: "2022-10-27"
+output: pdf_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+
+library(dplyr)
+library(GGally)
+library(caret)
+#library(lubridate)
+library(ggplot2)
+library(dplyr)
+
+```
+
+
+
+```{r}
+#reading file
+
+working_dir = "/Users/kiran/Documents/GitHub/housing-data"
+setwd(working_dir)
+
+# load post-processed data from Lesson 03
+df = read.csv("kc_house_data.csv")
+
+df_housing = df
+head(df_housing)
+
+colSums(is.na(df_housing))
+```
+#revewing the data
+
+#verified for nas and didn't find any nas in the data set. 
+```{r}
+#converting data types to factors 
+df_housing$waterfront = as.factor(df_housing$waterfront)
+df_housing$view = as.factor(df_housing$view)
+df_housing$zipcode = as.factor(df_housing$zipcode)
+df_housing$floors = as.factor(df_housing$floors)
+df_housing$condition = as.factor(df_housing$condition)
+df_housing$grade = as.factor(df_housing$grade)
+#featured engineering
+
+#adding column for if basement- 
+df_housing$is_basement = ifelse(df_housing$sqft_basement > 0, 1, 0)
+df_housing$is_basement = factor(df_housing$is_basement)
+
+#adding column if renovated
+df_housing$is_renovated = ifelse(df_housing$yr_renovated == 0, 0, 1)
+df_housing$is_renovated = factor(df_housing$is_renovated)
+
+
+
+#adding column for new construction year > 2010
+df_housing$is_new = ifelse(df_housing$yr_built > 2010, 1 ,0)
+df_housing$is_new = factor(df_housing$is_new)
+
+
+#adding column for view = 4, good view
+df_housing$is_goodview = ifelse(df_housing$view == '4', 'good view' ,'moderate view')
+df_housing$is_goodview = factor(df_housing$is_goodview)
+
+#adding column for condition 
+df_housing$is_condition = ifelse(df_housing$view %in% c('4', '5') , 'good condition' ,'medium condition')
+df_housing$is_condition = factor(df_housing$is_condition)
+
+
+
+
+df_housing <- select(df_housing, -date)
+head(df_housing)
+str(df_housing)
+
+summary(df_housing)
+
+```
+
+#EDA - EXPLOTRARY DATA ANALYSIS
+
+```{r}
+#exploring the data
+
+df_housing$log_price = log10(df_housing$price + 1) #converting price for uniform distribution of data
+
+head(df_housing)
+
+
+ggplot(df_housing, mapping = aes(x = log_price)) + 
+  geom_histogram(bins = 30) +
+  ggtitle(label = "Log Price histogram")
+ 
+
+# summary(df_housing$log_price) - to verify
+
+#FIltering the data
+
+#we can filter values > 6 from log_price 3rd quarilte value is 5.8, from plot it is values less than 6, so decided to use 6 as cut off for log_price value
+#filtered with 0 bathromms, didn't make sense to have house without bathroom, may be studio can be there without bedroom, but it would need atleast 1 bathrooom. 
+
+df_housing1 <- filter(df_housing, df_housing$log_price < 6 , df_housing$bathrooms >0) 
+#summary(df_housing1$log_price)  #to verify
+head(df_housing1)
+
+# group by zipcode
+zip = df_housing1 %>% group_by(zipcode) %>% summarize(price_logmean = mean(log_price))
+head(zip)
+
+
+
+#plot wrt zipcode , ideallyzipcode is representative of lat and long, so for easiness using only zipcode
+
+ggplot(zip, mapping = aes(y = price_logmean, x = zipcode)) + geom_point() +ggtitle(label = "Mean log price wrt zipcode", subtitle = "after filtering high price outlier")
+
+ggplot(df_housing1, mapping = aes(x = log_price)) + 
+  geom_histogram(bins = 20) +
+    ggtitle(label = "Log Price for subset data")
+
+
+
+#higher price values
+df_housingq4 <- filter(df_housing, df_housing$log_price >6 )
+coord1 = df_housingq4 %>% group_by(zipcode) %>% summarize(price_mean1 = mean(log_price))
+ggplot(coord1, mapping = aes(y = price_mean1, x = zipcode)) + geom_point()
+#data shows one zipcode may have house with house mean price of approx around 2200k
+
+
+#check data wrt sqft lot and sfqf living
+df_housing1 %>% ggplot(mapping = aes(x = log_price, y = sqft_living)) + 
+    geom_point() + 
+    geom_smooth(method = "lm") +
+    facet_wrap( ~ is_renovated)+
+    ggtitle(label  = "price vs sqft_living",
+              subtitle = "facet_wrap with is_renovated")
+
+
+df_housing1 %>% ggplot(mapping = aes(x = log_price, y = sqft_living)) + 
+    geom_point() + 
+    geom_smooth(method = "lm") +
+    facet_wrap(~ is_basement) +
+    ggtitle(label  = "price vs sqft_living",
+            subtitle = "facet_wrap with is_basement")
+
+df_housing1 %>% ggplot(mapping = aes(x = log_price, y = sqft_lot)) + 
+    geom_point() + 
+    geom_smooth(method = "lm") +
+    facet_wrap(~ is_basement)+
+    ggtitle(label  = "price vs sqft_lot")
+
+
+
+
+
+#log price vs sqft_living 
+df_housing1 %>% ggplot(mapping = aes(x = log_price, y = sqft_living)) + 
+    geom_point() + 
+    geom_smooth(method = "lm") +
+    facet_grid(is_goodview ~ is_condition)+
+    ggtitle(label  = "price vs sqft_living",
+            subtitle = "with facet_grid of good view vs condition")
+
+
+
+#log price vs sqft_living15 
+df_housing1 %>% ggplot(mapping = aes(x = log_price, y = sqft_living15)) + 
+    geom_point() + 
+    geom_smooth(method = "lm") +
+    facet_grid(is_goodview ~ is_condition)+
+    ggtitle(label  = "price vs sqft_living15",
+            subtitle = "with facet_grid of good view vs condition")
+
+#log price vs sqft_lot15 
+df_housing1 %>% ggplot(mapping = aes(x = log_price, y = sqft_lot15)) + 
+    geom_point() + 
+    geom_smooth(method = "lm") +
+    facet_grid(is_goodview ~ is_condition)+
+    ggtitle(label  = "price vs sqft_lot15",
+            subtitle = "with facet_grid of good view vs condition")
+
+df_housing1 %>% ggplot(mapping = aes(x = log_price, y = sqft_living)) + 
+    geom_point() + 
+    geom_smooth(method = "lm") +
+    facet_wrap(~floors)+
+    ggtitle(label  = "price vs sqft_living",
+            subtitle = "with facet_wrap of floors")
+
+
+
+#group by year built 
+housing_yrbuilt = df_housing1 %>% group_by(yr_built) %>% summarize(price_mean3 = mean(log_price), sqft_mean = mean(sqft_living))
+ggplot(housing_yrbuilt, mapping = aes(y = price_mean3, x = yr_built, size = sqft_mean)) + geom_point() + geom_smooth()
+
+
+#find the count of sqft_living for houses bultt later 1950
+housing_yrbuilt %>% ggplot(mapping = aes(x = yr_built, y = sqft_mean)) + 
+    geom_point() + 
+    geom_smooth(method = "lm") +
+    ggtitle(label  = "year built vs sqft_living")
+
+#with waterfront
+df_housing1 %>% ggplot(mapping = aes(x = waterfront, y = log_price)) + 
+    geom_point() + 
+    ggtitle(label  = "price wrt waterfront ")
+
+
+#with grade
+df_housing1 %>% ggplot(mapping = aes(x = grade, y = log_price)) + 
+    geom_point() + 
+    ggtitle(label  = "price wrt grade ")
+
+
+
+#coreation with sqft_basement and sqft_above
+df_housing1 %>% ggplot(mapping = aes(x = sqft_basement, y = log_price)) + 
+    geom_point() + 
+    geom_smooth(method = "lm") +
+    ggtitle(label  = "log_price vs sqft_basement")
+
+
+df_housing1 %>% ggplot(mapping = aes(x = sqft_above, y = log_price)) + 
+    geom_point() + 
+    geom_smooth(method = "lm") +
+    ggtitle(label  = "log_price built vs sqft_above")
+```
+
+#EDA analsis
+
+1. Histogram of log price shows that there are outliters with high price of housing. The histogram starts tapering after log_price is 6. SO used that as value to filter out those values to remove outlier for anlaysis. 
+2. Group-by zipcode, to determine if prices are dependant on location. The plot of price_logmean vs zipcode shows that some zip codes have higher sales compared to others. SO zipcode is factor. Latitue and Longitude is similar to location. SO didn't use those 2 parameters for this analysis. 
+Reviewed plot wrt zipcodend mean_logprice, there are some areas which has more cost price. we can review wrt zip code filter ones greater than mean values and check other aspects. There are some houses which have high prices, which can be outlier. After filtering data and running with zip code, it still shows similar trend. 
+3. Ran similar analysis for houses with log_price > 6, to see if zipcode has any impact. And it shows same analysis as before. 
+4. Log_price vs sqft_living plot shows a condition impacts the price. Ran with rooms, rooms also indicate correlation to price. 
+5. Log_price vs sqft_living15 plot shows this factor impacts the price. Similar plot ran with sqft_lot15, there is some correlation, but not major like the sqft_living15. 
+6. Group_by year and ploted yr_built vs mean of log_price and there is a correlation. Data also shows that sqft_living is hihger for houses built later than 1950. It may be reason why the price of house is higher . mean sqft_living to year built, shows that sqft_living is increasing in general, which explains why price is increasing. So, year may not be major factor. So the feature of new built may not be impactful 
+7. PLot with waterfront and log_price, box plot shows no impact, it may be other factor that impacted price 
+8. PLot with grade vs log_price, shows higher the grade, there is increase in price. 
+9. Plot with sqft_above & sqft_basement also has impact on cost, but that would be included in the sqft_living, having basement is an engineering feature added, so we can use that instead of the other parameters. 
+7. Reviewing plot, price factors may be zipcode, sqft_living, rooms, good view, year_built, grade, is_basement
+
+
+
+
+
+```{r}
+#list of top 10 zipcodes with mean price log mean higher. 
+head(zip)
+new <- zip[order(zip$price_logmean), ]
+head(new, 10)
+
+
+#top high prices list with log_price > 6
+zip1 = df_housingq4 %>% group_by(zipcode) %>% summarize(price_logmean2 = mean(log_price)) 
+head(zip1)
+h1 <- zip1[order(zip1$price_logmean2), ]
+
+head(h1)
+
+#adding sqft_living to the list
+zip2 = df_housing %>% group_by(zipcode) %>% summarize(mean_sqft = mean(sqft_living))
+ggplot(zip2, mapping = aes(y = mean_sqft , x = zipcode)) + geom_point() +ggtitle(label = "sqft  wrt zipcode")
+```
+
+
+
+
+#MODELLING
+# ADDING BINARY FEATURES TO MODEL
+```{r}
+#Create binary features
+condition = model.matrix(~ condition -1, data = df_housing1)
+head(condition)
+
+zipcode = model.matrix(~ zipcode -1, data = df_housing1)
+head(zipcode)
+
+grade = model.matrix(~ grade, data = df_housing1)
+head(grade)
+
+is_basement = model.matrix(~ is_basement -1, data = df_housing1)
+head(is_basement)
+
+
+# combine with original dataframe
+df_housing1 = cbind(df_housing1, condition, grade, zipcode, is_basement)
+
+
+#removing some columns
+
+df_housing1 = select(df_housing1, -condition, -zipcode, -price, -id, -lat, -long, -waterfront, -view, -grade, -floors)
+head(df_housing1)
+```
+
+#pre-processing data  for modellling
+```{r}
+#library(tidyselect)
+head(df_housing1)
+#remove the y variable and factors before pre processing steps
+housing_features = select(df_housing1, -log_price, yr_renovated, -sqft_above, sqft_basement)
+in_train = createDataPartition(y = df_housing1$log_price, p = 0.8, list = FALSE)
+housing_train = housing_features[in_train, ]
+housing_test = housing_features[-in_train, ]
+
+
+preprocessing_steps1 = preProcess(housing_features, method = c('center', 'scale' , 'nzv'))
+housing_train_proc = predict(preprocessing_steps1, newdata = housing_train)
+housing_test_proc = predict(preprocessing_steps1, newdata = housing_test)
+
+df2 = df_housing1[in_train, ]
+df3 = df_housing1[-in_train, ]
+
+
+housing_train_proc = cbind(housing_train_proc, log_price =df2$log_price )
+housing_test_proc = cbind(housing_test_proc, log_price = df3$log_price)
+
+
+
+
+
+
+#checking results
+head(housing_train_proc)
+head(housing_test_proc)
+
+#saving output file
+
+
+# write processed data
+write.csv(housing_train_proc, "housing_train_proc.csv")
+write.csv(housing_test_proc, "housing_test_proc.csv")
+```
+
+```{r}
+#using lasso method
+
+nearZeroVar(housing_train_proc, saveMetrics = TRUE)
+
+
+full_model = train(log_price ~ . ,
+                  data = housing_train_proc, 
+                  method = 'lasso',  #using lasso method, it is variation of lm model
+                  tuneLength = 10,
+                  trControl = trainControl(method = 'cv', number = 5))  # perform cross-validation during training,using cross validation and 5 slpits
+full_model
+
+
+full_model$bestTune
+plot(varImp(full_model))
+```
+#using lasso method besttune fit of 10 parameters with fraction of 0.9 with RSME of 0.1312 is optimal. 
+#varimp plot shows that sqft_living, sqft_living15,bathrooms, grade 6 to 9, bedrooms, floors, goodview, basement are most important factors, condition 
+#plots 
+```{r}
+pred = predict(full_model, newdata = housing_test_proc)
+postResample(pred = pred, obs = housing_test_proc$log_price)
+
+errors = data.frame(predicted = pred, 
+                    observed = housing_test_proc$log_price, 
+                    error = pred - housing_test_proc$log_price)
+
+# plot the correlation between prediction and observation
+ggplot(data = errors, aes(x = predicted, y = observed)) + 
+  geom_point() + 
+  geom_abline(intercept = 0, slope = 1, color = 'red')  +
+  ggtitle(label = "with full model predcited vs observed using LASSO method")
+```
+#using simple tree model
+```{r}
+# simple decision tree model
+#  -> instead of using "formulas", explicitly pass in X (features) and the Y (target)
+
+in_train = createDataPartition(y = df_housing1$log_price, p = 0.8, list = FALSE)
+housing_train1 = df_housing1[in_train, ]
+housing_test1 = df_housing1[-in_train, ]
+
+df4 = select(housing_train1, -log_price)
+tree_model = train(y = housing_train1$log_price,
+                   x = df4, method = "rpart" )
+tree_model
+
+library(rpart.plot)
+
+plot(varImp(tree_model))
+```
+#treemodel has 16092 samples with 22 predictors, with optimal cp values of 0.03644920
+#varimp indicates, sqft_living, grade 6, 9, 8, sqft_living15, bathrooms, sqft_lot15,sqft_lot are top factors. sqft_lot in previous model isnt the top factor.
+
+
+#with the lasso method facotrs , and question # of bedrooms : 4
+# of bathroms: 3
+Min 3500sqft
+New construction (>2010)
+good grade, good view
+```{r}
+#linear regression 
+
+
+model2 = lm(formula =log_price ~ sqft_living +bedrooms+ bathrooms+ grade6 + grade7 + grade8 + grade9 + is_goodview  , data = housing_train_proc )
+attributes(model2)
+summary(model2)
+model2$coefficients
+
+model2_predict = train(log_price ~ sqft_living +bedrooms+ bathrooms +  is_new + is_goodview   , data = housing_train_proc, method = 'lm', metric = 'RMSE' )
+
+
+
+model2_predict
+#predicts target value
+
+pred1 = predict(model2_predict,  
+               newdata = housing_test_proc )  # test data
+
+#calculate metrics by comparing prediction vs observations  
+
+postResample(pred = pred1, obs = housing_test_proc $log_price)
+
+
+
+
+model3 = lm(formula =log_price ~ sqft_living +bedrooms+ bathrooms +  is_new + is_goodview  , data = housing_train_proc )
+attributes(model3)
+summary(model3)
+model3$coefficients
+
+
+#error
+model3_predict = train(log_price ~ sqft_living +bedrooms+ bathrooms +  is_new + is_goodview   , data = housing_train_proc, method = 'lm', metric = 'RMSE' )
+
+
+
+model3_predict
+#predicts target value
+
+pred = predict(model3_predict,  
+               newdata = housing_test_proc )  # test data
+
+#calculate metrics by comparing prediction vs observations  
+
+postResample(pred = pred, obs = housing_test_proc $log_price)
+```
+
+
+
+#using linear model, 
+1. log_price =  5.77 +  0.088 sqft_living -0.010 bedrooms -0.0017 bathrooms  -0.038 grade6 -0.025grade7 +0.056grade8 + 0.018 grade9 -0.1446is_goodview with  RMSE is 0.1459580
+2. Running model to answer the objective of question
+log_price =  5.7 + 0.11sqft_living -0.016 bedrooms +0.14bathrooms +0.07is_new – 0.15goodview
+
+
+
+
+#We can predict the house sales price wrt to criteria like # of bedrooms, sqft required etc,  by calucalting the median values of the factors and substiuting in the linear model. 
+
+
+ 
+```{r}
+
+```
+
+```
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
